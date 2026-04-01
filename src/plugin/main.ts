@@ -1,8 +1,11 @@
 import { Modal, Notice, Plugin, Setting } from "obsidian";
 import { ObsSyncSettingTab } from "./settings-tab.js";
 import { getVaultBasePath } from "./fs-adapter.js";
+import { Platform } from "obsidian";
 import { SyncEngine } from "../core/sync-engine.js";
 import { IsomorphicGitProvider } from "../git/isomorphic.js";
+import { SimpleGitProvider } from "../git/simple.js";
+import type { IGitProvider } from "../git/git-provider.js";
 import { DEFAULT_PLUGIN_SETTINGS, MIN_SYNC_INTERVAL_MS, MAX_SYNC_INTERVAL_MS, type ObsSyncPluginSettings, type SyncResult } from "../core/types.js";
 
 export default class ObsSyncPlugin extends Plugin {
@@ -81,7 +84,11 @@ export default class ObsSyncPlugin extends Plugin {
   private getSyncEngine(): SyncEngine {
     if (!this.syncEngine || !this.settings.remote) {
       const vaultPath = getVaultBasePath(this.app);
-      const gitProvider = new IsomorphicGitProvider();
+      // Use simple-git on desktop (faster, handles large repos)
+      // Fall back to isomorphic-git on mobile
+      const gitProvider: IGitProvider = Platform.isDesktop
+        ? new SimpleGitProvider()
+        : new IsomorphicGitProvider();
       this.syncEngine = new SyncEngine(
         this.settings,
         gitProvider,
