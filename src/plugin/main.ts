@@ -1,4 +1,4 @@
-import { Notice, Plugin } from "obsidian";
+import { Modal, Notice, Plugin, Setting } from "obsidian";
 import { ObsSyncSettingTab } from "./settings-tab.js";
 import { getVaultBasePath } from "./fs-adapter.js";
 import { SyncEngine } from "../core/sync-engine.js";
@@ -32,13 +32,13 @@ export default class ObsSyncPlugin extends Plugin {
     this.addCommand({
       id: "obssync-sync",
       name: "Sync now",
-      callback: () => this.doSync(),
+      callback: () => this.confirmAndSync(),
     });
 
     this.addCommand({
       id: "obssync-push",
       name: "Push to GitHub",
-      callback: () => this.doPush(),
+      callback: () => this.confirmAndPush(),
     });
 
     this.addCommand({
@@ -55,7 +55,7 @@ export default class ObsSyncPlugin extends Plugin {
 
     // Ribbon icon
     this.addRibbonIcon("refresh-cw", "ObsSync: Sync now", () => {
-      this.doSync();
+      this.confirmAndSync();
     });
 
     // Start auto-sync if enabled
@@ -119,6 +119,22 @@ export default class ObsSyncPlugin extends Plugin {
       new Notice(`ObsSync Error: ${err instanceof Error ? err.message : String(err)}`);
       console.error("ObsSync init error:", err);
     }
+  }
+
+  async confirmAndSync() {
+    const confirmed = await this.confirm(
+      "Sync Vault to GitHub",
+      "This will push your vault notes to your GitHub repository. Your notes may contain sensitive information.",
+    );
+    if (confirmed) await this.doSync();
+  }
+
+  async confirmAndPush() {
+    const confirmed = await this.confirm(
+      "Push to GitHub",
+      "This will push your local changes to your GitHub repository. Your notes may contain sensitive information.",
+    );
+    if (confirmed) await this.doPush();
   }
 
   async doSync(silent = false) {
@@ -313,5 +329,62 @@ export default class ObsSyncPlugin extends Plugin {
   restartSyncSchedule() {
     this.syncEngine = null; // Force re-creation with new settings
     this.startSyncSchedule();
+  }
+
+  private confirm(title: string, message: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      const modal = new ConfirmModal(this.app, title, message, resolve);
+      modal.open();
+    });
+  }
+}
+
+class ConfirmModal extends Modal {
+  private resolved = false;
+
+  constructor(
+    app: import("obsidian").App,
+    private title: string,
+    private message: string,
+    private onResult: (confirmed: boolean) => void,
+  ) {
+    super(app);
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+
+    contentEl.createEl("h3", { text: this.title });
+    contentEl.createEl("p", { text: this.message });
+    contentEl.createEl("p", {
+      text: "Make sure your GitHub repository is set to private.",
+      cls: "mod-warning",
+    });
+
+    const buttonContainer = contentEl.createDiv({ cls: "modal-button-container" });
+
+    const cancelBtn = buttonContainer.createEl("button", { text: "Cancel" });
+    cancelBtn.addEventListener("click", () => {
+      this.resolved = true;
+      this.onResult(false);
+      this.close();
+    });
+
+    const confirmBtn = buttonContainer.createEl("button", {
+      text: "Yes, sync now",
+      cls: "mod-cta",
+    });
+    confirmBtn.addEventListener("click", () => {
+      this.resolved = true;
+      this.onResult(true);
+      this.close();
+    });
+  }
+
+  onClose() {
+    if (!this.resolved) {
+      this.onResult(false);
+    }
+    this.contentEl.empty();
   }
 }
