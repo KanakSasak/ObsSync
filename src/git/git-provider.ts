@@ -37,6 +37,12 @@ export interface IGitProvider {
   /** List files with merge conflicts */
   listConflicts(dir: string): Promise<string[]>;
 
+  /** Fetch from remote without merging */
+  fetch(dir: string, remote: string, branch: string, token?: string): Promise<void>;
+
+  /** Check if remote has any commits */
+  remoteHasData(dir: string, remote: string, token?: string): Promise<boolean>;
+
   /** Get the HEAD commit hash */
   getHeadHash(dir: string): Promise<string | null>;
 

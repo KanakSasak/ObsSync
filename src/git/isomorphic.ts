@@ -113,6 +113,44 @@ export class IsomorphicGitProvider implements IGitProvider {
     }
   }
 
+  async fetch(
+    dir: string,
+    remote: string,
+    branch: string,
+    token?: string,
+  ): Promise<void> {
+    try {
+      await git.fetch({
+        fs,
+        http,
+        dir,
+        remote,
+        ref: branch,
+        singleBranch: true,
+        onAuth: token ? () => ({ username: token, password: "x-oauth-basic" }) : undefined,
+      });
+    } catch {
+      // Fetch can fail on empty remote — that's OK
+    }
+  }
+
+  async remoteHasData(
+    dir: string,
+    remote: string,
+    token?: string,
+  ): Promise<boolean> {
+    try {
+      const info = await git.getRemoteInfo2({
+        http,
+        url: buildAuthUrl(remote, token),
+        onAuth: token ? () => ({ username: token, password: "x-oauth-basic" }) : undefined,
+      });
+      return !!(info.refs && Object.keys(info.refs).length > 0);
+    } catch {
+      return false;
+    }
+  }
+
   async status(dir: string): Promise<FileChange[]> {
     const matrix = await git.statusMatrix({ fs, dir });
     const changes: FileChange[] = [];

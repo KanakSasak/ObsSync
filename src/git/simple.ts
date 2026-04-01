@@ -180,6 +180,46 @@ export class SimpleGitProvider implements IGitProvider {
     return result.conflicted;
   }
 
+  async fetch(
+    dir: string,
+    remote: string,
+    branch: string,
+    token?: string,
+  ): Promise<void> {
+    const git = this.getGit(dir);
+    try {
+      if (token) {
+        const remotes = await git.getRemotes(true);
+        const origin = remotes.find((r) => r.name === remote);
+        if (origin) {
+          const authUrl = buildAuthUrl(origin.refs.fetch || origin.refs.push, token);
+          await git.remote(["set-url", remote, authUrl]);
+          await git.fetch(remote, branch);
+          await git.remote(["set-url", remote, origin.refs.fetch || origin.refs.push]);
+          return;
+        }
+      }
+      await git.fetch(remote, branch);
+    } catch {
+      // Fetch can fail on empty remote — that's OK
+    }
+  }
+
+  async remoteHasData(
+    dir: string,
+    remote: string,
+    token?: string,
+  ): Promise<boolean> {
+    const git = this.getGit(dir);
+    try {
+      const remoteUrl = token ? buildAuthUrl(remote, token) : remote;
+      const result = await git.listRemote([remoteUrl]);
+      return result.trim().length > 0;
+    } catch {
+      return false;
+    }
+  }
+
   async getHeadHash(dir: string): Promise<string | null> {
     const git = this.getGit(dir);
     try {
