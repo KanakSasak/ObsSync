@@ -145,13 +145,14 @@ export default class ObsSyncPlugin extends Plugin {
     }
 
     this.isSyncing = true;
+    // Persistent notice — stays visible until we hide it
+    const progress = silent ? null : new Notice("ObsSync: Starting sync...", 0);
     try {
-      this.setStatusBar("syncing", "⟳ Pulling from GitHub...");
-      if (!silent) new Notice("ObsSync: Syncing...");
       const engine = this.getSyncEngine();
 
-      // Use step-by-step sync for progress reporting
+      // Step 1: Pull
       this.setStatusBar("pulling", "↓ Pulling...");
+      progress?.setMessage("⟳ ObsSync: Pulling from GitHub...");
       let pullResult: SyncResult;
       try {
         pullResult = await engine.pull();
@@ -159,7 +160,9 @@ export default class ObsSyncPlugin extends Plugin {
         pullResult = { pushed: [], pulled: [], conflicts: [], message: "Pull skipped." };
       }
 
+      // Step 2: Push
       this.setStatusBar("pushing", "↑ Pushing...");
+      progress?.setMessage("⟳ ObsSync: Pushing to GitHub...");
       const pushResult = await engine.push();
 
       // Build combined result
@@ -176,7 +179,7 @@ export default class ObsSyncPlugin extends Plugin {
         result.message = "Nothing to sync. Already up to date.";
       }
 
-      // In silent mode (auto-sync), only show notice if something actually happened
+      // In silent mode (auto-sync), only log when nothing happened
       if (silent && result.skipped) {
         this.setStatusBar("idle");
         console.log("ObsSync: Nothing to sync. Already up to date.");
@@ -185,11 +188,16 @@ export default class ObsSyncPlugin extends Plugin {
 
       const timestamp = new Date().toLocaleTimeString();
       this.setStatusBar("success", `✓ Synced at ${timestamp} — ${pushResult.pushed.length} pushed, ${pullResult.pulled.length} pulled`);
+
+      // Show final result in the persistent notice, then auto-hide after 8s
+      progress?.hide();
       this.showResult(result);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.setStatusBar("error", `✗ Sync failed: ${msg.slice(0, 50)}`);
-      new Notice(`ObsSync Error: ${msg}`);
+      progress?.setMessage(`✗ ObsSync Error: ${msg}`);
+      // Auto-hide error notice after 10s
+      if (progress) setTimeout(() => progress.hide(), 10000);
       console.error("ObsSync sync error:", err);
     } finally {
       this.isSyncing = false;
@@ -201,18 +209,20 @@ export default class ObsSyncPlugin extends Plugin {
     if (this.isSyncing) return;
 
     this.isSyncing = true;
+    const progress = new Notice("⟳ ObsSync: Pushing to GitHub...", 0);
     try {
       this.setStatusBar("pushing", "↑ Pushing to GitHub...");
-      new Notice("ObsSync: Pushing...");
       const engine = this.getSyncEngine();
       const result = await engine.push();
       const timestamp = new Date().toLocaleTimeString();
       this.setStatusBar("success", `✓ Pushed at ${timestamp} — ${result.pushed.length} file(s)`);
+      progress.hide();
       this.showResult(result);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.setStatusBar("error", `✗ Push failed: ${msg.slice(0, 50)}`);
-      new Notice(`ObsSync Error: ${msg}`);
+      progress.setMessage(`✗ ObsSync Error: ${msg}`);
+      setTimeout(() => progress.hide(), 10000);
       console.error("ObsSync push error:", err);
     } finally {
       this.isSyncing = false;
@@ -224,18 +234,20 @@ export default class ObsSyncPlugin extends Plugin {
     if (this.isSyncing) return;
 
     this.isSyncing = true;
+    const progress = new Notice("⟳ ObsSync: Pulling from GitHub...", 0);
     try {
       this.setStatusBar("pulling", "↓ Pulling from GitHub...");
-      new Notice("ObsSync: Pulling...");
       const engine = this.getSyncEngine();
       const result = await engine.pull();
       const timestamp = new Date().toLocaleTimeString();
       this.setStatusBar("success", `✓ Pulled at ${timestamp} — ${result.pulled.length} file(s)`);
+      progress.hide();
       this.showResult(result);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.setStatusBar("error", `✗ Pull failed: ${msg.slice(0, 50)}`);
-      new Notice(`ObsSync Error: ${msg}`);
+      progress.setMessage(`✗ ObsSync Error: ${msg}`);
+      setTimeout(() => progress.hide(), 10000);
       console.error("ObsSync pull error:", err);
     } finally {
       this.isSyncing = false;
