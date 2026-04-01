@@ -18,8 +18,16 @@ Sync your Obsidian vault to a private GitHub repository. Works as both an **Obsi
 1. Download `main.js` and `manifest.json` from [Releases](https://github.com/KanakSasak/ObsSync/releases)
 2. Create folder: `<your-vault>/.obsidian/plugins/obssync/`
 3. Copy `main.js` and `manifest.json` into that folder
-4. Open Obsidian → Settings → Community plugins → Enable **ObsSync**
-5. Configure your GitHub token and remote URL in the plugin settings
+4. Open **Settings** (gear icon or `Ctrl+,`)
+5. Go to **Community plugins**
+6. Make sure **Restricted mode** is turned **OFF**
+7. Click **Installed plugins** — you should see **ObsSync** listed
+8. **Toggle it ON** to enable it
+9. Click the **gear icon** next to ObsSync to configure:
+   - **GitHub Token** — your PAT with `repo` scope
+   - **Remote URL** — your private GitHub repo URL
+   - **Auto-sync** — toggle on + set interval
+10. Use the **sync icon** in the left ribbon or open the command palette (`Ctrl+P`) and search for `ObsSync` commands: **Initialize vault for sync**, **Sync now**, **Push**, **Pull**, **Status**
 
 ### CLI
 
