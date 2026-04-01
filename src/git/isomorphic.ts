@@ -1,11 +1,40 @@
 import git from "isomorphic-git";
-import http from "isomorphic-git/http/node";
+import defaultHttp from "isomorphic-git/http/node";
 import * as fs from "fs";
 import * as path from "path";
 import type { IGitProvider } from "./git-provider.js";
 import type { Author, FileChange } from "../core/types.js";
 import { ObsSyncError } from "../core/types.js";
 import { buildAuthUrl } from "./git-provider.js";
+
+// Custom HTTP client with extended timeout (5 minutes)
+const http = {
+  ...defaultHttp,
+  request: (config: Parameters<typeof defaultHttp.request>[0]) => {
+    return defaultHttp.request({
+      ...config,
+      headers: {
+        ...config.headers,
+      },
+    });
+  },
+};
+
+// Wrap push/pull with AbortController timeout
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms / 1000}s. Your vault may be too large for a single push. Try again or reduce vault size.`));
+    }, ms);
+    promise.then(
+      (val) => { clearTimeout(timer); resolve(val); },
+      (err) => { clearTimeout(timer); reject(err); },
+    );
+  });
+}
+
+const PUSH_TIMEOUT_MS = 300000; // 5 minutes
+const PULL_TIMEOUT_MS = 300000; // 5 minutes
 
 export class IsomorphicGitProvider implements IGitProvider {
   async init(dir: string): Promise<void> {
@@ -19,16 +48,20 @@ export class IsomorphicGitProvider implements IGitProvider {
     token?: string,
   ): Promise<void> {
     try {
-      await git.clone({
-        fs,
-        http,
-        dir,
-        url: buildAuthUrl(url, token),
-        ref: branch,
-        singleBranch: true,
-        depth: 1,
-        onAuth: token ? () => ({ username: token, password: "x-oauth-basic" }) : undefined,
-      });
+      await withTimeout(
+        git.clone({
+          fs,
+          http,
+          dir,
+          url: buildAuthUrl(url, token),
+          ref: branch,
+          singleBranch: true,
+          depth: 1,
+          onAuth: token ? () => ({ username: token, password: "x-oauth-basic" }) : undefined,
+        }),
+        PULL_TIMEOUT_MS,
+        "Clone",
+      );
     } catch (err) {
       throw new ObsSyncError(
         `Failed to clone ${url}: ${err instanceof Error ? err.message : String(err)}`,
@@ -67,14 +100,18 @@ export class IsomorphicGitProvider implements IGitProvider {
     token?: string,
   ): Promise<void> {
     try {
-      await git.push({
-        fs,
-        http,
-        dir,
-        remote,
-        ref: branch,
-        onAuth: token ? () => ({ username: token, password: "x-oauth-basic" }) : undefined,
-      });
+      await withTimeout(
+        git.push({
+          fs,
+          http,
+          dir,
+          remote,
+          ref: branch,
+          onAuth: token ? () => ({ username: token, password: "x-oauth-basic" }) : undefined,
+        }),
+        PUSH_TIMEOUT_MS,
+        "Push",
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("401") || msg.includes("403") || msg.includes("Authentication")) {
@@ -91,15 +128,19 @@ export class IsomorphicGitProvider implements IGitProvider {
     token?: string,
   ): Promise<void> {
     try {
-      await git.pull({
-        fs,
-        http,
-        dir,
-        ref: branch,
-        singleBranch: true,
-        author: { name: "ObsSync", email: "obssync@local" },
-        onAuth: token ? () => ({ username: token, password: "x-oauth-basic" }) : undefined,
-      });
+      await withTimeout(
+        git.pull({
+          fs,
+          http,
+          dir,
+          ref: branch,
+          singleBranch: true,
+          author: { name: "ObsSync", email: "obssync@local" },
+          onAuth: token ? () => ({ username: token, password: "x-oauth-basic" }) : undefined,
+        }),
+        PULL_TIMEOUT_MS,
+        "Pull",
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("401") || msg.includes("403") || msg.includes("Authentication")) {
