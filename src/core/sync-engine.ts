@@ -214,10 +214,14 @@ export class SyncEngine {
   private async ensureInitialized(): Promise<void> {
     const isRepo = await this.gitProvider.isRepo(this.vaultPath);
     if (!isRepo) {
-      throw new ObsSyncError(
-        "Vault is not initialized. Run 'obssync init' first.",
-        "NOT_INITIALIZED",
-      );
+      if (!this.config.remote) {
+        throw new ObsSyncError(
+          "Vault is not initialized and no remote URL configured.",
+          "NOT_INITIALIZED",
+        );
+      }
+      // Auto-initialize: init repo, set remote, create .gitignore
+      await this.initialize(this.config.remote);
     }
   }
 
