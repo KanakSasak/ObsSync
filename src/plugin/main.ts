@@ -10,9 +10,14 @@ export default class ObsSyncPlugin extends Plugin {
   private syncEngine: SyncEngine | null = null;
   private syncIntervalId: number | null = null;
   private isSyncing = false;
+  private statusBarEl: HTMLElement | null = null;
 
   async onload() {
     await this.loadSettings();
+
+    // Status bar for sync progress
+    this.statusBarEl = this.addStatusBarItem();
+    this.setStatusBar("idle");
 
     // Settings tab
     this.addSettingTab(new ObsSyncSettingTab(this.app, this));
@@ -103,11 +108,14 @@ export default class ObsSyncPlugin extends Plugin {
     if (!this.validateSettings()) return;
 
     try {
+      this.setStatusBar("initializing");
       new Notice("ObsSync: Initializing...");
       const engine = this.getSyncEngine();
       await engine.initialize(this.settings.remote);
+      this.setStatusBar("success", "✓ Vault initialized!");
       new Notice("ObsSync: Vault initialized for sync!");
     } catch (err) {
+      this.setStatusBar("error", `✗ Init failed`);
       new Notice(`ObsSync Error: ${err instanceof Error ? err.message : String(err)}`);
       console.error("ObsSync init error:", err);
     }
@@ -122,19 +130,50 @@ export default class ObsSyncPlugin extends Plugin {
 
     this.isSyncing = true;
     try {
+      this.setStatusBar("syncing", "⟳ Pulling from GitHub...");
       if (!silent) new Notice("ObsSync: Syncing...");
       const engine = this.getSyncEngine();
-      const result = await engine.fullSync();
+
+      // Use step-by-step sync for progress reporting
+      this.setStatusBar("pulling", "↓ Pulling...");
+      let pullResult: SyncResult;
+      try {
+        pullResult = await engine.pull();
+      } catch {
+        pullResult = { pushed: [], pulled: [], conflicts: [], message: "Pull skipped." };
+      }
+
+      this.setStatusBar("pushing", "↑ Pushing...");
+      const pushResult = await engine.push();
+
+      // Build combined result
+      const result: SyncResult = {
+        pushed: pushResult.pushed,
+        pulled: pullResult.pulled,
+        conflicts: pullResult.conflicts,
+        commitHash: pushResult.commitHash,
+        skipped: pullResult.pulled.length === 0 && (pushResult.skipped ?? false),
+        message: `Sync complete. Pushed ${pushResult.pushed.length} file(s), pulled ${pullResult.pulled.length} file(s).`,
+      };
+
+      if (result.skipped) {
+        result.message = "Nothing to sync. Already up to date.";
+      }
 
       // In silent mode (auto-sync), only show notice if something actually happened
       if (silent && result.skipped) {
+        this.setStatusBar("idle");
         console.log("ObsSync: Nothing to sync. Already up to date.");
         return;
       }
 
+      const timestamp = new Date().toLocaleTimeString();
+      this.setStatusBar("success", `✓ Synced at ${timestamp} — ${pushResult.pushed.length} pushed, ${pullResult.pulled.length} pulled`);
       this.showResult(result);
     } catch (err) {
-      new Notice(`ObsSync Error: ${err instanceof Error ? err.message : String(err)}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      this.setStatusBar("error", `✗ Sync failed: ${msg.slice(0, 50)}`);
+      new Notice(`ObsSync Error: ${msg}`);
       console.error("ObsSync sync error:", err);
     } finally {
       this.isSyncing = false;
@@ -147,12 +186,17 @@ export default class ObsSyncPlugin extends Plugin {
 
     this.isSyncing = true;
     try {
+      this.setStatusBar("pushing", "↑ Pushing to GitHub...");
       new Notice("ObsSync: Pushing...");
       const engine = this.getSyncEngine();
       const result = await engine.push();
+      const timestamp = new Date().toLocaleTimeString();
+      this.setStatusBar("success", `✓ Pushed at ${timestamp} — ${result.pushed.length} file(s)`);
       this.showResult(result);
     } catch (err) {
-      new Notice(`ObsSync Error: ${err instanceof Error ? err.message : String(err)}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      this.setStatusBar("error", `✗ Push failed: ${msg.slice(0, 50)}`);
+      new Notice(`ObsSync Error: ${msg}`);
       console.error("ObsSync push error:", err);
     } finally {
       this.isSyncing = false;
@@ -165,12 +209,17 @@ export default class ObsSyncPlugin extends Plugin {
 
     this.isSyncing = true;
     try {
+      this.setStatusBar("pulling", "↓ Pulling from GitHub...");
       new Notice("ObsSync: Pulling...");
       const engine = this.getSyncEngine();
       const result = await engine.pull();
+      const timestamp = new Date().toLocaleTimeString();
+      this.setStatusBar("success", `✓ Pulled at ${timestamp} — ${result.pulled.length} file(s)`);
       this.showResult(result);
     } catch (err) {
-      new Notice(`ObsSync Error: ${err instanceof Error ? err.message : String(err)}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      this.setStatusBar("error", `✗ Pull failed: ${msg.slice(0, 50)}`);
+      new Notice(`ObsSync Error: ${msg}`);
       console.error("ObsSync pull error:", err);
     } finally {
       this.isSyncing = false;
@@ -203,6 +252,38 @@ export default class ObsSyncPlugin extends Plugin {
         .map((c) => `${c.path} (${c.resolution})`)
         .join("\n");
       new Notice(`ObsSync Conflicts:\n${conflictList}`, 10000);
+    }
+  }
+
+  private setStatusBar(
+    state: "idle" | "syncing" | "pushing" | "pulling" | "initializing" | "success" | "error",
+    detail?: string,
+  ) {
+    if (!this.statusBarEl) return;
+    const icons: Record<string, string> = {
+      idle: "✓",
+      syncing: "⟳",
+      pushing: "↑",
+      pulling: "↓",
+      initializing: "⚙",
+      success: "✓",
+      error: "✗",
+    };
+    const labels: Record<string, string> = {
+      idle: "ObsSync: Ready",
+      syncing: "ObsSync: Syncing...",
+      pushing: "ObsSync: Pushing...",
+      pulling: "ObsSync: Pulling...",
+      initializing: "ObsSync: Initializing...",
+      success: "ObsSync: Done",
+      error: "ObsSync: Failed",
+    };
+    const text = detail ? `${icons[state]} ${detail}` : `${icons[state]} ${labels[state]}`;
+    this.statusBarEl.setText(text);
+
+    // Auto-reset to idle after success/error
+    if (state === "success" || state === "error") {
+      setTimeout(() => this.setStatusBar("idle"), 10000);
     }
   }
 
