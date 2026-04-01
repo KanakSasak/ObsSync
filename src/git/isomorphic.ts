@@ -105,6 +105,10 @@ export class IsomorphicGitProvider implements IGitProvider {
       if (msg.includes("401") || msg.includes("403") || msg.includes("Authentication")) {
         throw new ObsSyncError("Authentication failed. Check your GitHub token.", "AUTH_FAILED", err instanceof Error ? err : undefined);
       }
+      // Empty remote (no commits/branches yet) — not an error on first sync
+      if (msg.includes("could not find") || msg.includes("cannot find") || msg.includes("not found") || msg.includes("Could not resolve")) {
+        return; // Skip pull silently, push will create the branch
+      }
       throw new ObsSyncError(`Pull failed: ${msg}`, "REMOTE_ERROR", err instanceof Error ? err : undefined);
     }
   }

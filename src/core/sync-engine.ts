@@ -145,8 +145,18 @@ export class SyncEngine {
     // Get HEAD hash before pull to detect remote changes
     const hashBeforePull = await this.gitProvider.getHeadHash(this.vaultPath);
 
-    // Pull
-    const pullResult = await this.pull();
+    // Pull (may fail on empty remote — that's OK, we'll push first)
+    let pullResult: SyncResult;
+    try {
+      pullResult = await this.pull();
+    } catch (err) {
+      // If pull fails due to empty remote or missing branch, continue to push
+      if (err instanceof ObsSyncError && err.code === "REMOTE_ERROR") {
+        pullResult = { pushed: [], pulled: [], conflicts: [], message: "Pull skipped (empty remote)." };
+      } else {
+        throw err;
+      }
+    }
 
     // Get HEAD hash after pull
     const hashAfterPull = await this.gitProvider.getHeadHash(this.vaultPath);
