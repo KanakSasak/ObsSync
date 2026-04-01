@@ -34,6 +34,18 @@ export class SyncEngine {
     await this.gitProvider.setRemote(this.vaultPath, "origin", remoteUrl);
     await ensureGitignore(this.vaultPath, this.config.excludePatterns);
 
+    // Always ensure at least one commit exists locally
+    // (isomorphic-git's statusMatrix needs a HEAD ref to work properly)
+    const localHead = await this.gitProvider.getHeadHash(this.vaultPath);
+    if (!localHead) {
+      try {
+        await this.gitProvider.add(this.vaultPath, ".gitignore");
+        await this.gitProvider.commit(this.vaultPath, "Initial commit", DEFAULT_AUTHOR);
+      } catch {
+        // .gitignore might not exist, that's OK
+      }
+    }
+
     // Check if remote has existing data
     const remoteHasData = await this.gitProvider.remoteHasData(
       this.vaultPath,
@@ -42,28 +54,15 @@ export class SyncEngine {
     );
 
     if (remoteHasData) {
-      // Remote has commits — fetch and try to pull
+      // Remote has commits — fetch and try to pull/merge
       await this.gitProvider.fetch(this.vaultPath, "origin", this.config.branch, this.token);
-
-      const localHead = await this.gitProvider.getHeadHash(this.vaultPath);
-      if (!localHead) {
-        // No local commits yet — make an initial commit so we can pull/merge
-        // Stage .gitignore as the first commit
-        try {
-          await this.gitProvider.add(this.vaultPath, ".gitignore");
-          await this.gitProvider.commit(this.vaultPath, "Initial commit", DEFAULT_AUTHOR);
-        } catch {
-          // .gitignore might not exist yet, that's OK
-        }
-      }
-
       try {
         await this.gitProvider.pull(this.vaultPath, "origin", this.config.branch, this.token);
       } catch {
         // Pull may fail on unrelated histories — that's OK for first sync
       }
     }
-    // If remote is empty: nothing to pull, first push will create the branch
+    // If remote is empty: first push will create the branch
   }
 
   async push(message?: string): Promise<SyncResult> {
