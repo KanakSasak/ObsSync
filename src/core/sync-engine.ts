@@ -35,15 +35,23 @@ export class SyncEngine {
     await ensureGitignore(this.vaultPath, this.config.excludePatterns);
 
     // Always ensure at least one commit exists locally
-    // (isomorphic-git's statusMatrix needs a HEAD ref to work properly)
+    // (needed for statusMatrix and to avoid "src refspec main does not match any")
     const localHead = await this.gitProvider.getHeadHash(this.vaultPath);
     if (!localHead) {
+      // Stage .gitignore (should exist from ensureGitignore above)
       try {
         await this.gitProvider.add(this.vaultPath, ".gitignore");
-        await this.gitProvider.commit(this.vaultPath, "Initial commit", DEFAULT_AUTHOR);
       } catch {
-        // .gitignore might not exist, that's OK
+        // If .gitignore doesn't exist, create a minimal one and stage it
+        await fs.writeFile(
+          path.join(this.vaultPath, ".gitignore"),
+          ".obsidian/\n.trash/\n.obssync.json\n",
+          "utf-8",
+        );
+        await this.gitProvider.add(this.vaultPath, ".gitignore");
       }
+      // Commit — must not fail silently
+      await this.gitProvider.commit(this.vaultPath, "Initial commit", DEFAULT_AUTHOR);
     }
 
     // Check if remote has existing data

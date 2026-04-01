@@ -12,7 +12,7 @@ export class SimpleGitProvider implements IGitProvider {
 
   async init(dir: string): Promise<void> {
     const git = this.getGit(dir);
-    await git.init();
+    await git.init(["--initial-branch=main"]);
   }
 
   async clone(
@@ -53,6 +53,13 @@ export class SimpleGitProvider implements IGitProvider {
     author: Author,
   ): Promise<string> {
     const git = this.getGit(dir);
+    // Ensure local git config has user info (needed for commits)
+    try {
+      await git.addConfig("user.name", author.name, false, "local");
+      await git.addConfig("user.email", author.email, false, "local");
+    } catch {
+      // Config may already exist
+    }
     const result = await git.commit(message, undefined, {
       "--author": `${author.name} <${author.email}>`,
     });
@@ -75,13 +82,13 @@ export class SimpleGitProvider implements IGitProvider {
         if (origin) {
           const authUrl = buildAuthUrl(origin.refs.push || origin.refs.fetch, token);
           await git.remote(["set-url", remote, authUrl]);
-          await git.push(remote, branch);
+          await git.push(["-u", remote, branch]);
           // Restore original URL (without token)
           await git.remote(["set-url", remote, origin.refs.push || origin.refs.fetch]);
           return;
         }
       }
-      await git.push(remote, branch);
+      await git.push(["-u", remote, branch]);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("Authentication") || msg.includes("401") || msg.includes("403")) {
