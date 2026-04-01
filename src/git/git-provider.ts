@@ -37,6 +37,9 @@ export interface IGitProvider {
   /** List files with merge conflicts */
   listConflicts(dir: string): Promise<string[]>;
 
+  /** Get the HEAD commit hash */
+  getHeadHash(dir: string): Promise<string | null>;
+
   /** Log messages for debugging */
   log(dir: string, count: number): Promise<Array<{ hash: string; message: string }>>;
 }

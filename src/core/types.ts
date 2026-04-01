@@ -22,6 +22,9 @@ export const DEFAULT_CONFIG: ObsSyncConfig = {
   commitMessagePrefix: "vault:",
 };
 
+export const MIN_SYNC_INTERVAL_MS = 30000; // 30 seconds
+export const MAX_SYNC_INTERVAL_MS = 86400000; // 24 hours
+
 export const DEFAULT_PLUGIN_SETTINGS: ObsSyncPluginSettings = {
   ...DEFAULT_CONFIG,
   token: "",
@@ -43,6 +46,8 @@ export interface SyncResult {
   conflicts: ConflictInfo[];
   commitHash?: string;
   message: string;
+  /** True when sync was skipped because nothing changed */
+  skipped?: boolean;
 }
 
 export interface ConflictInfo {

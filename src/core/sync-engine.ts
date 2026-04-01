@@ -13,6 +13,7 @@ const DEFAULT_AUTHOR: Author = {
 
 export class SyncEngine {
   private conflictHandler: ConflictHandler;
+  private lastSyncedHash: string | null = null;
 
   constructor(
     private config: ObsSyncConfig,
@@ -38,13 +39,25 @@ export class SyncEngine {
     await this.ensureInitialized();
 
     const changes = await this.getFilteredChanges();
+    const currentHash = await this.gitProvider.getHeadHash(this.vaultPath);
 
+    // Skip if no changes and HEAD matches last synced hash
     if (changes.length === 0) {
+      if (currentHash && currentHash === this.lastSyncedHash) {
+        return {
+          pushed: [],
+          pulled: [],
+          conflicts: [],
+          message: "Nothing to push. Already up to date.",
+          skipped: true,
+        };
+      }
       return {
         pushed: [],
         pulled: [],
         conflicts: [],
         message: "No changes to push.",
+        skipped: true,
       };
     }
 
@@ -76,6 +89,9 @@ export class SyncEngine {
       this.config.branch,
       this.token,
     );
+
+    // Track last synced hash
+    this.lastSyncedHash = commitHash;
 
     return {
       pushed: changes,
@@ -124,9 +140,35 @@ export class SyncEngine {
   }
 
   async fullSync(message?: string): Promise<SyncResult> {
-    // Pull first, then push
+    await this.ensureInitialized();
+
+    // Get HEAD hash before pull to detect remote changes
+    const hashBeforePull = await this.gitProvider.getHeadHash(this.vaultPath);
+
+    // Pull
     const pullResult = await this.pull();
+
+    // Get HEAD hash after pull
+    const hashAfterPull = await this.gitProvider.getHeadHash(this.vaultPath);
+    const hadRemoteChanges = hashBeforePull !== hashAfterPull;
+
+    // Push
     const pushResult = await this.push(message);
+
+    // If nothing happened in either direction, return a clean "nothing to sync" message
+    if (!hadRemoteChanges && pushResult.skipped) {
+      return {
+        pushed: [],
+        pulled: [],
+        conflicts: [],
+        message: "Nothing to sync. Already up to date.",
+        skipped: true,
+      };
+    }
+
+    // Update last synced hash
+    const finalHash = await this.gitProvider.getHeadHash(this.vaultPath);
+    if (finalHash) this.lastSyncedHash = finalHash;
 
     return {
       pushed: pushResult.pushed,

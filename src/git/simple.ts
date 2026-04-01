@@ -180,6 +180,16 @@ export class SimpleGitProvider implements IGitProvider {
     return result.conflicted;
   }
 
+  async getHeadHash(dir: string): Promise<string | null> {
+    const git = this.getGit(dir);
+    try {
+      const hash = await git.revparse(["HEAD"]);
+      return hash.trim() || null;
+    } catch {
+      return null;
+    }
+  }
+
   async log(
     dir: string,
     count: number,

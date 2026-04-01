@@ -191,6 +191,14 @@ export class IsomorphicGitProvider implements IGitProvider {
     return conflicts;
   }
 
+  async getHeadHash(dir: string): Promise<string | null> {
+    try {
+      return await git.resolveRef({ fs, dir, ref: "HEAD" });
+    } catch {
+      return null;
+    }
+  }
+
   async log(
     dir: string,
     count: number,

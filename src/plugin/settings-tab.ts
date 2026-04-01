@@ -1,5 +1,6 @@
 import { PluginSettingTab, Setting, type App } from "obsidian";
 import type ObsSyncPlugin from "./main.js";
+import { MIN_SYNC_INTERVAL_MS, MAX_SYNC_INTERVAL_MS } from "../core/types.js";
 
 export class ObsSyncSettingTab extends PluginSettingTab {
   plugin: ObsSyncPlugin;
@@ -81,7 +82,10 @@ export class ObsSyncSettingTab extends PluginSettingTab {
     // Sync interval
     new Setting(containerEl)
       .setName("Sync interval")
-      .setDesc("How often to auto-sync")
+      .setDesc(
+        `How often to auto-sync (min: ${MIN_SYNC_INTERVAL_MS / 1000}s, max: ${MAX_SYNC_INTERVAL_MS / 3600000}h). ` +
+        "Duplicate pushes are skipped automatically when nothing has changed.",
+      )
       .addDropdown((dropdown) =>
         dropdown
           .addOption("60000", "1 minute")
@@ -91,7 +95,9 @@ export class ObsSyncSettingTab extends PluginSettingTab {
           .addOption("3600000", "1 hour")
           .setValue(String(this.plugin.settings.autoSyncIntervalMs))
           .onChange(async (value) => {
-            this.plugin.settings.autoSyncIntervalMs = parseInt(value);
+            const parsed = parseInt(value);
+            const clamped = Math.max(MIN_SYNC_INTERVAL_MS, Math.min(MAX_SYNC_INTERVAL_MS, parsed));
+            this.plugin.settings.autoSyncIntervalMs = clamped;
             await this.plugin.saveSettings();
             this.plugin.restartSyncSchedule();
           }),

@@ -3,7 +3,7 @@ import { ObsSyncSettingTab } from "./settings-tab.js";
 import { getVaultBasePath } from "./fs-adapter.js";
 import { SyncEngine } from "../core/sync-engine.js";
 import { IsomorphicGitProvider } from "../git/isomorphic.js";
-import { DEFAULT_PLUGIN_SETTINGS, type ObsSyncPluginSettings, type SyncResult } from "../core/types.js";
+import { DEFAULT_PLUGIN_SETTINGS, MIN_SYNC_INTERVAL_MS, MAX_SYNC_INTERVAL_MS, type ObsSyncPluginSettings, type SyncResult } from "../core/types.js";
 
 export default class ObsSyncPlugin extends Plugin {
   settings: ObsSyncPluginSettings = { ...DEFAULT_PLUGIN_SETTINGS };
@@ -113,18 +113,25 @@ export default class ObsSyncPlugin extends Plugin {
     }
   }
 
-  async doSync() {
+  async doSync(silent = false) {
     if (!this.validateSettings()) return;
     if (this.isSyncing) {
-      new Notice("ObsSync: Sync already in progress...");
+      if (!silent) new Notice("ObsSync: Sync already in progress...");
       return;
     }
 
     this.isSyncing = true;
     try {
-      new Notice("ObsSync: Syncing...");
+      if (!silent) new Notice("ObsSync: Syncing...");
       const engine = this.getSyncEngine();
       const result = await engine.fullSync();
+
+      // In silent mode (auto-sync), only show notice if something actually happened
+      if (silent && result.skipped) {
+        console.log("ObsSync: Nothing to sync. Already up to date.");
+        return;
+      }
+
       this.showResult(result);
     } catch (err) {
       new Notice(`ObsSync Error: ${err instanceof Error ? err.message : String(err)}`);
@@ -202,10 +209,15 @@ export default class ObsSyncPlugin extends Plugin {
   startSyncSchedule() {
     this.stopSyncSchedule();
     if (this.settings.autoSyncEnabled && this.settings.autoSyncIntervalMs > 0) {
+      // Clamp interval to valid range
+      const interval = Math.max(
+        MIN_SYNC_INTERVAL_MS,
+        Math.min(MAX_SYNC_INTERVAL_MS, this.settings.autoSyncIntervalMs),
+      );
       this.syncIntervalId = this.registerInterval(
         window.setInterval(() => {
-          this.doSync();
-        }, this.settings.autoSyncIntervalMs),
+          this.doSync(true); // silent mode — no notice spam when nothing changed
+        }, interval),
       );
     }
   }
